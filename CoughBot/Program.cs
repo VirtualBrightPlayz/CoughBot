@@ -105,7 +105,7 @@ namespace CoughBot
                             await Task.Delay(100);
                         }
                     }
-                    await message.ReplyAsync("The virus has been contained.");
+                    await message.ReplyAsync($"{config.VirusName} has been contained.");
                 }
             }
         }
