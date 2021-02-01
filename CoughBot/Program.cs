@@ -72,7 +72,7 @@ namespace CoughBot
                 {
                     var msgsa = message.Channel.GetMessagesAsync(config.InfectMessageLimit);
                     var msgs = await msgsa.FlattenAsync();
-                    if (msgs.Where(p => p.Content.Contains("*cough*")).Count() != 0)
+                    if (msgs.Where(p => p.Content.Contains("*cough*") && p.Author.Id == user1.Id).Count() != 0)
                     {
                         return;
                     }
