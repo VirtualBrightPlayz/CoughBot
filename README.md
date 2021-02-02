@@ -1,3 +1,3 @@
 # CoughBot
- 
-https://discord.com/api/oauth2/authorize?client_id=<clientid>&scope=bot&permissions=269862976
+
+Inspired/Copied by the work of https://github.com/galaxy119 in the Exiled Discord
