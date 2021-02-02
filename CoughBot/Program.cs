@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -17,16 +18,16 @@ namespace CoughBot
         private Random rng;
         private Config configs;
         private Database databases;
-        private SocketRole infectedRole;
+        // private SocketRole infectedRole;
         private string path = "config.json";
         private string dataPath = "data.json";
 
         public class Config
         {
             public string Token { get; set; } = "bot_token";
-            public Dictionary<ulong, GuildConfig> Guilds { get; set; } = new Dictionary<ulong, GuildConfig>()
+            public Dictionary<string, GuildConfig> Guilds { get; set; } = new Dictionary<string, GuildConfig>()
             {
-                { 0, new GuildConfig() }
+                { "0", new GuildConfig() }
             };
         }
 
@@ -50,18 +51,17 @@ namespace CoughBot
 
         public class Database
         {
-            public Dictionary<ulong, GuildDatabase> Guilds { get; set; } = new Dictionary<ulong, GuildDatabase>()
+            public Dictionary<string, GuildDatabase> Guilds { get; set; } = new Dictionary<string, GuildDatabase>()
             {
-                { 0, new GuildDatabase() }
+                { "0", new GuildDatabase() }
             };
         }
 
         public class GuildDatabase
         {
-            public Dictionary<ulong, DateTime> InfectedTimestamps = new Dictionary<ulong, DateTime>();
+            public Dictionary<string, long> InfectedTimestamps { get; set; } = new Dictionary<string, long>();
+            public Dictionary<string, List<ulong>> InfectedWho { get; set; } = new Dictionary<string, List<ulong>>();
         }
-
-        public static Thread CommandThread;
 
         static void Main(string[] args)
         {
@@ -93,13 +93,13 @@ namespace CoughBot
             _client.MessageReceived += MessageReceived;
 
             if (!File.Exists(path))
-                File.WriteAllText(path, JsonConvert.SerializeObject(new Config(), Formatting.Indented));
+                await File.WriteAllTextAsync(path, JsonConvert.SerializeObject(new Config(), Formatting.Indented));
 
             if (!File.Exists(dataPath))
-                File.WriteAllText(dataPath, JsonConvert.SerializeObject(new Database(), Formatting.Indented));
+                await File.WriteAllTextAsync(dataPath, JsonConvert.SerializeObject(new Database(), Formatting.Indented));
 
-            configs = JsonConvert.DeserializeObject<Config>(File.ReadAllText(path));
-            databases = JsonConvert.DeserializeObject<Database>(File.ReadAllText(path));
+            configs = JsonConvert.DeserializeObject<Config>(await File.ReadAllTextAsync(path));
+            databases = JsonConvert.DeserializeObject<Database>(await File.ReadAllTextAsync(dataPath));
 
             Console.WriteLine(JsonConvert.SerializeObject(configs, Formatting.Indented));
 
@@ -114,10 +114,16 @@ namespace CoughBot
                 switch (cmd[0].ToLower())
                 {
                     case "rlcfg":
-                        configs = JsonConvert.DeserializeObject<Config>(File.ReadAllText(path));
-                        databases = JsonConvert.DeserializeObject<Database>(File.ReadAllText(path));
+                        configs = JsonConvert.DeserializeObject<Config>(await File.ReadAllTextAsync(path));
+                        databases = JsonConvert.DeserializeObject<Database>(await File.ReadAllTextAsync(path));
                         Console.WriteLine(JsonConvert.SerializeObject(configs, Formatting.Indented));
                         break;
+                    case "svdb":
+                        await SaveData();
+                        break;
+                    case "exit":
+                        await SaveData();
+                        return;
                 }
             }
             // await Task.Delay(-1);
@@ -125,17 +131,18 @@ namespace CoughBot
 
         private async Task MessageReceived(SocketMessage arg)
         {
+            SocketRole infectedRole = null;
             if (arg is SocketUserMessage message && !message.Author.IsBot && !message.Author.IsWebhook && message.Author is SocketGuildUser user1 && message.Channel is SocketGuildChannel channel)
             {
-                if (!configs.Guilds.ContainsKey(user1.Guild.Id))
+                if (!configs.Guilds.ContainsKey(user1.Guild.Id.ToString()))
                 {
                     return;
                 }
-                if (!databases.Guilds.ContainsKey(user1.Guild.Id))
+                if (!databases.Guilds.ContainsKey(user1.Guild.Id.ToString()))
                 {
-                    databases.Guilds.Add(user1.Guild.Id, new GuildDatabase());
+                    databases.Guilds.Add(user1.Guild.Id.ToString(), new GuildDatabase());
                 }
-                GuildConfig config = (configs.Guilds[user1.Guild.Id]);
+                GuildConfig config = (configs.Guilds[user1.Guild.Id.ToString()]);
                 if (infectedRole == null)
                 {
                     infectedRole = user1.Guild.GetRole(config.InfectedRoleId);
@@ -167,18 +174,15 @@ namespace CoughBot
                     {
                         var msgsa = message.Channel.GetMessagesAsync(config.InfectMessageLimit);
                         var msgs = await msgsa.FlattenAsync();
-                        if (msgs.Where(p => p.Content.Contains("*cough*") && p.Author.Id == user1.Id).Count() == 0)
+                        // if (msgs.Where(p => p.Content.Contains("*cough*") && p.Author.Id == user1.Id).Count() == 0)
                         {
                             IMessage[] array = msgs.Where(p => !p.Author.IsBot && !p.Author.IsWebhook && p.Author.Id != user1.Id && p.Timestamp.UtcDateTime.Add(TimeSpan.FromSeconds(config.SafeTimeSeconds)) >= DateTime.UtcNow && p.Author is SocketGuildUser user && !user.Roles.Contains(infectedRole)).ToArray();
                             if (array.Length != 0)
                             {
                                 IMessage msg2 = array[rng.Next(array.Length)];
-                                Console.WriteLine(msg2.GetType().FullName);
-                                Console.WriteLine(msg2.Author.GetType().FullName);
                                 if (msg2 is RestUserMessage message2 && message2.Author is SocketGuildUser user2)
                                 {
-                                    await user2.AddRoleAsync(infectedRole);
-                                    databases.Guilds[user1.Guild.Id].InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
+                                    await InfectUser(user2, infectedRole, user1);
                                     await SaveData();
                                     string name = string.IsNullOrWhiteSpace(user1.Nickname) ? user1.Username : user1.Nickname;
                                     await message2.ReplyAsync($"{name} infected you with {config.VirusName}!");
@@ -200,8 +204,7 @@ namespace CoughBot
                     }
                     if (!found)
                     {
-                        await user1.AddRoleAsync(infectedRole);
-                        databases.Guilds[user1.Guild.Id].InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
+                        await InfectUser(user1, infectedRole);
                         await SaveData();
                         await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
                     }
@@ -210,14 +213,14 @@ namespace CoughBot
                 {
                     string[] infected = infectedRole.Members.OrderByDescending(p =>
                     {
-                        if (databases.Guilds[user1.Guild.Id].InfectedTimestamps.ContainsKey(p.Id))
-                            return databases.Guilds[user1.Guild.Id].InfectedTimestamps[p.Id].Ticks;
+                        if (databases.Guilds[user1.Guild.Id.ToString()].InfectedTimestamps.ContainsKey(p.Id.ToString()))
+                            return databases.Guilds[user1.Guild.Id.ToString()].InfectedTimestamps[p.Id.ToString()];
                         return long.MinValue;
                     }).Select(p =>
                     {
                         string time = "N/A";
-                        if (databases.Guilds[user1.Guild.Id].InfectedTimestamps.ContainsKey(p.Id))
-                            time = databases.Guilds[user1.Guild.Id].InfectedTimestamps[p.Id].ToString();
+                        if (databases.Guilds[user1.Guild.Id.ToString()].InfectedTimestamps.ContainsKey(p.Id.ToString()))
+                            time = DateTime.MinValue.AddTicks(databases.Guilds[user1.Guild.Id.ToString()].InfectedTimestamps[p.Id.ToString()]).ToString();
                         return $"{p.Username}#{p.Discriminator} was infected at {time}";
                     }).ToArray();
                     string output = "";
@@ -232,18 +235,22 @@ namespace CoughBot
                     emb.WithTitle(config.VirusName);
                     emb.WithDescription(output);
                     await message.ReplyAsync(embed: emb.Build());
+                    // string path = Path.GetTempFileName();
+                    string path = Path.GetRandomFileName() + ".png";
+                    StatsDraw.Draw(path, user1.Guild, databases.Guilds[user1.Guild.Id.ToString()].InfectedWho, config.StatsMaxInfectedListings);
+                    await message.Channel.SendFileAsync(path);
+                    File.Delete(path);
                 }
                 if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.ResetCommand.ToLower()))
                 {
                     if (infectedRole != null)
                     {
-                        foreach (var member in infectedRole.Members)
-                        {
-                            await member.RemoveRoleAsync(infectedRole);
-                            await Task.Delay(100);
-                        }
+                        await infectedRole.DeleteAsync();
                     }
-                    databases.Guilds[user1.Guild.Id].InfectedTimestamps.Clear();
+                    RestRole role = await user1.Guild.CreateRoleAsync(config.InfectedRoleName, GuildPermissions.None, new Discord.Color(config.InfectedRoleColorRed, config.InfectedRoleColorGreen, config.InfectedRoleColorBlue), false, false);
+                    configs.Guilds[user1.Guild.Id.ToString()].InfectedRoleId = role.Id;
+                    databases.Guilds[user1.Guild.Id.ToString()].InfectedTimestamps.Clear();
+                    databases.Guilds[user1.Guild.Id.ToString()].InfectedWho.Clear();
                     await SaveData();
                     await message.ReplyAsync($"{config.VirusName} has been contained.");
                 }
@@ -253,11 +260,29 @@ namespace CoughBot
         public async Task SaveData()
         {
             await File.WriteAllTextAsync(dataPath, JsonConvert.SerializeObject(databases, Formatting.Indented));
+            await File.WriteAllTextAsync(path, JsonConvert.SerializeObject(configs, Formatting.Indented));
+        }
+
+        public async Task InfectUser(SocketGuildUser user1, SocketRole infectedRole, SocketGuildUser infector = null)
+        {
+            if (infectedRole == null)
+                return;
+            await user1.AddRoleAsync(infectedRole);
+            if (!databases.Guilds[user1.Guild.Id.ToString()].InfectedTimestamps.ContainsKey(user1.Guild.Id.ToString()))
+                databases.Guilds[user1.Guild.Id.ToString()].InfectedTimestamps.Add(user1.Id.ToString(), DateTime.UtcNow.Ticks);
+            if (infector != null)
+            {
+                if (!databases.Guilds[user1.Guild.Id.ToString()].InfectedWho.ContainsKey(infector.Id.ToString()))
+                    databases.Guilds[user1.Guild.Id.ToString()].InfectedWho.Add(infector.Id.ToString(), new List<ulong>());
+                databases.Guilds[user1.Guild.Id.ToString()].InfectedWho[infector.Id.ToString()].Add(user1.Id);
+            }
+            await SaveData();
         }
 
         private async Task Log(LogMessage arg)
         {
             Console.WriteLine(arg.ToString());
+            await Task.Delay(0);
         }
     }
 }
