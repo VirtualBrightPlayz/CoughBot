@@ -30,12 +30,13 @@ namespace CoughBot
             public string VirusName { get; set; } = "The Virus";
             public string InfectedRoleName { get; set; } = "The Infected";
             public string ResetCommand { get; set; } = "/cureall";
-            public string StatsCommand { get; set; } = "/infectstats";
+            public string StatsCommand { get; set; } = "/virusstats";
             public double SafeTimeSeconds { get; set; } = 60.0d;
             public int InfectedRoleColorRed { get; set; } = 255;
             public int InfectedRoleColorGreen { get; set; } = 165;
             public int InfectedRoleColorBlue { get; set; } = 0;
             public int AutoInfectPercent { get; set; } = 20;
+            public int StatsMaxInfectedListings { get; set; } = 15;
         }
 
         public class Database
@@ -98,6 +99,8 @@ namespace CoughBot
                         if (msg2 is RestUserMessage message2 && message2.Author is SocketGuildUser user2)
                         {
                             await user2.AddRoleAsync(infectedRole);
+                            database.InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
+                            await SaveData();
                             string name = string.IsNullOrWhiteSpace(user1.Nickname) ? user1.Username : user1.Nickname;
                             await message2.ReplyAsync($"{name} infected you with {config.VirusName}!");
                         }
@@ -106,20 +109,35 @@ namespace CoughBot
                 if (infectedRole != null && !user1.Roles.Contains(infectedRole) && !config.SuperSafeChannelIds.Contains(message.Channel.Id) && rng.Next(100) < config.AutoInfectPercent)
                 {
                     await user1.AddRoleAsync(infectedRole);
+                    database.InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
+                    await SaveData();
                     await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
                 }
                 if (infectedRole != null && message.Content.ToLower().StartsWith(config.StatsCommand.ToLower()))
                 {
-                    string[] infected = infectedRole.Members.Select(p =>
+                    string[] infected = infectedRole.Members.OrderByDescending(p =>
+                    {
+                        if (database.InfectedTimestamps.ContainsKey(p.Id))
+                            return database.InfectedTimestamps[p.Id].Ticks;
+                        return long.MinValue;
+                    }).Select(p =>
                     {
                         string time = "N/A";
                         if (database.InfectedTimestamps.ContainsKey(p.Id))
                             time = database.InfectedTimestamps[p.Id].ToString();
                         return $"{p.Username}#{p.Discriminator} was infected at {time}";
                     }).ToArray();
+                    string output = "";
+                    for (int i = 0; i < infected.Length && i < config.StatsMaxInfectedListings; i++)
+                    {
+                        if (i != 0)
+                            output += "\n";
+                        output += infected[i];
+                    }
                     EmbedBuilder emb = new EmbedBuilder();
+                    emb.WithColor(config.InfectedRoleColorRed, config.InfectedRoleColorGreen, config.InfectedRoleColorBlue);
                     emb.WithTitle(config.VirusName);
-                    emb.WithDescription(string.Join("\n", infected));
+                    emb.WithDescription(output);
                     await message.ReplyAsync(embed: emb.Build());
                 }
                 if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.ResetCommand.ToLower()))
@@ -132,6 +150,8 @@ namespace CoughBot
                             await Task.Delay(100);
                         }
                     }
+                    database.InfectedTimestamps.Clear();
+                    await SaveData();
                     await message.ReplyAsync($"{config.VirusName} has been contained.");
                 }
             }
@@ -139,7 +159,7 @@ namespace CoughBot
 
         public async Task SaveData()
         {
-            await File.WriteAllTextAsync(dataPath, JsonConvert.SerializeObject(database));
+            await File.WriteAllTextAsync(dataPath, JsonConvert.SerializeObject(database, Formatting.Indented));
         }
 
         private async Task Log(LogMessage arg)
