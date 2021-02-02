@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Discord;
 using Discord.Rest;
@@ -14,8 +15,8 @@ namespace CoughBot
     {
         private DiscordSocketClient _client;
         private Random rng;
-        private Config config;
-        private Database database;
+        private Config configs;
+        private Database databases;
         private SocketRole infectedRole;
         private string path = "config.json";
         private string dataPath = "data.json";
@@ -23,6 +24,14 @@ namespace CoughBot
         public class Config
         {
             public string Token { get; set; } = "bot_token";
+            public Dictionary<ulong, GuildConfig> Guilds { get; set; } = new Dictionary<ulong, GuildConfig>()
+            {
+                { 0, new GuildConfig() }
+            };
+        }
+
+        public class GuildConfig
+        {
             public ulong InfectedRoleId { get; set; }
             public ulong[] SafeChannelIds { get; set; } = new ulong[1];
             public ulong[] SuperSafeChannelIds { get; set; } = new ulong[1];
@@ -41,12 +50,38 @@ namespace CoughBot
 
         public class Database
         {
+            public Dictionary<ulong, GuildDatabase> Guilds { get; set; } = new Dictionary<ulong, GuildDatabase>()
+            {
+                { 0, new GuildDatabase() }
+            };
+        }
+
+        public class GuildDatabase
+        {
             public Dictionary<ulong, DateTime> InfectedTimestamps = new Dictionary<ulong, DateTime>();
         }
 
+        public static Thread CommandThread;
+
         static void Main(string[] args)
         {
+            /*CommandThread = new Thread(new ThreadStart(ConsoleInputThread));
+            CommandThread.IsBackground = true;
+            CommandThread.Name = "Console Thread";
+            CommandThread.Start();*/
             new Program().MainAsync().GetAwaiter().GetResult();
+        }
+
+        static void ConsoleInputThread()
+        {
+            Thread.Sleep(1);
+            string[] cmd = Console.ReadLine().Split(' ');
+
+            switch (cmd[0].ToLower())
+            {
+                case "rlcfg":
+                    break;
+            }
         }
 
         public async Task MainAsync()
@@ -63,21 +98,44 @@ namespace CoughBot
             if (!File.Exists(dataPath))
                 File.WriteAllText(dataPath, JsonConvert.SerializeObject(new Database(), Formatting.Indented));
 
-            config = JsonConvert.DeserializeObject<Config>(File.ReadAllText(path));
-            database = JsonConvert.DeserializeObject<Database>(File.ReadAllText(path));
+            configs = JsonConvert.DeserializeObject<Config>(File.ReadAllText(path));
+            databases = JsonConvert.DeserializeObject<Database>(File.ReadAllText(path));
 
-            Console.WriteLine(JsonConvert.SerializeObject(config, Formatting.Indented));
+            Console.WriteLine(JsonConvert.SerializeObject(configs, Formatting.Indented));
 
-            await _client.LoginAsync(TokenType.Bot, config.Token);
+            await _client.LoginAsync(TokenType.Bot, configs.Token);
             await _client.StartAsync();
 
-            await Task.Delay(-1);
+            while (true)
+            {
+                await Task.Delay(1);
+                string[] cmd = Console.ReadLine().Split(' ');
+
+                switch (cmd[0].ToLower())
+                {
+                    case "rlcfg":
+                        configs = JsonConvert.DeserializeObject<Config>(File.ReadAllText(path));
+                        databases = JsonConvert.DeserializeObject<Database>(File.ReadAllText(path));
+                        Console.WriteLine(JsonConvert.SerializeObject(configs, Formatting.Indented));
+                        break;
+                }
+            }
+            // await Task.Delay(-1);
         }
 
         private async Task MessageReceived(SocketMessage arg)
         {
             if (arg is SocketUserMessage message && !message.Author.IsBot && !message.Author.IsWebhook && message.Author is SocketGuildUser user1 && message.Channel is SocketGuildChannel channel)
             {
+                if (!configs.Guilds.ContainsKey(user1.Guild.Id))
+                {
+                    return;
+                }
+                if (!databases.Guilds.ContainsKey(user1.Guild.Id))
+                {
+                    databases.Guilds.Add(user1.Guild.Id, new GuildDatabase());
+                }
+                GuildConfig config = (configs.Guilds[user1.Guild.Id]);
                 if (infectedRole == null)
                 {
                     infectedRole = user1.Guild.GetRole(config.InfectedRoleId);
@@ -120,7 +178,7 @@ namespace CoughBot
                                 if (msg2 is RestUserMessage message2 && message2.Author is SocketGuildUser user2)
                                 {
                                     await user2.AddRoleAsync(infectedRole);
-                                    database.InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
+                                    databases.Guilds[user1.Guild.Id].InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
                                     await SaveData();
                                     string name = string.IsNullOrWhiteSpace(user1.Nickname) ? user1.Username : user1.Nickname;
                                     await message2.ReplyAsync($"{name} infected you with {config.VirusName}!");
@@ -143,7 +201,7 @@ namespace CoughBot
                     if (!found)
                     {
                         await user1.AddRoleAsync(infectedRole);
-                        database.InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
+                        databases.Guilds[user1.Guild.Id].InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
                         await SaveData();
                         await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
                     }
@@ -152,14 +210,14 @@ namespace CoughBot
                 {
                     string[] infected = infectedRole.Members.OrderByDescending(p =>
                     {
-                        if (database.InfectedTimestamps.ContainsKey(p.Id))
-                            return database.InfectedTimestamps[p.Id].Ticks;
+                        if (databases.Guilds[user1.Guild.Id].InfectedTimestamps.ContainsKey(p.Id))
+                            return databases.Guilds[user1.Guild.Id].InfectedTimestamps[p.Id].Ticks;
                         return long.MinValue;
                     }).Select(p =>
                     {
                         string time = "N/A";
-                        if (database.InfectedTimestamps.ContainsKey(p.Id))
-                            time = database.InfectedTimestamps[p.Id].ToString();
+                        if (databases.Guilds[user1.Guild.Id].InfectedTimestamps.ContainsKey(p.Id))
+                            time = databases.Guilds[user1.Guild.Id].InfectedTimestamps[p.Id].ToString();
                         return $"{p.Username}#{p.Discriminator} was infected at {time}";
                     }).ToArray();
                     string output = "";
@@ -185,7 +243,7 @@ namespace CoughBot
                             await Task.Delay(100);
                         }
                     }
-                    database.InfectedTimestamps.Clear();
+                    databases.Guilds[user1.Guild.Id].InfectedTimestamps.Clear();
                     await SaveData();
                     await message.ReplyAsync($"{config.VirusName} has been contained.");
                 }
@@ -194,7 +252,7 @@ namespace CoughBot
 
         public async Task SaveData()
         {
-            await File.WriteAllTextAsync(dataPath, JsonConvert.SerializeObject(database, Formatting.Indented));
+            await File.WriteAllTextAsync(dataPath, JsonConvert.SerializeObject(databases, Formatting.Indented));
         }
 
         private async Task Log(LogMessage arg)
