@@ -49,7 +49,7 @@ namespace CoughBot
                     string name = user.Username;
                     if (!string.IsNullOrWhiteSpace(user.Nickname))
                         name = user.Nickname;
-                    name += $"#{user.Discriminator}";
+                    name += $"#{user.Discriminator} - {data[item.Key].Count}";
                     brush.Color = item.Value;
                     var dims = gfx.MeasureString(name, font);
                     if (line + dims.Width >= 590f)
@@ -57,7 +57,7 @@ namespace CoughBot
                         vert += dims.Height;
                         line = 10f;
                     }
-                    gfx.DrawString($"{name} - {data[item.Key].Count}", font, brush, line, vert);
+                    gfx.DrawString($"{name}", font, brush, line, vert);
                     line += dims.Width;
                 }
                 bm.Save(path, ImageFormat.Png);

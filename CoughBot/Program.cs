@@ -86,7 +86,13 @@ namespace CoughBot
 
         public async Task MainAsync()
         {
-            _client = new DiscordSocketClient();
+            _client = new DiscordSocketClient(new DiscordSocketConfig()
+            {
+                // LogLevel = LogSeverity.Verbose,
+                AlwaysDownloadUsers = true,
+                LargeThreshold = 10000,
+                MessageCacheSize = 500
+            });
             rng = new Random();
 
             _client.Log += Log;
