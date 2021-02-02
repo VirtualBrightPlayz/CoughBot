@@ -76,42 +76,77 @@ namespace CoughBot
 
         private async Task MessageReceived(SocketMessage arg)
         {
-            if (arg is SocketUserMessage message && !message.Author.IsBot && !message.Author.IsWebhook && message.Author is SocketGuildUser user1)
+            if (arg is SocketUserMessage message && !message.Author.IsBot && !message.Author.IsWebhook && message.Author is SocketGuildUser user1 && message.Channel is SocketGuildChannel channel)
             {
                 if (infectedRole == null)
                 {
                     infectedRole = user1.Guild.GetRole(config.InfectedRoleId);
                 }
+                SocketGuild guild = user1.Guild;
                 if (infectedRole != null && !config.SafeChannelIds.Contains(message.Channel.Id) && !config.SuperSafeChannelIds.Contains(message.Channel.Id) && message.Content.ToLower().Contains("*cough*") && user1.Roles.Contains(infectedRole))
                 {
-                    var msgsa = message.Channel.GetMessagesAsync(config.InfectMessageLimit);
-                    var msgs = await msgsa.FlattenAsync();
-                    if (msgs.Where(p => p.Content.Contains("*cough*") && p.Author.Id == user1.Id).Count() != 0)
+                    bool found = false;
+                    foreach (var item in config.SafeChannelIds)
                     {
-                        return;
+                        var cat = guild.GetCategoryChannel(item);
+                        if (cat == null || !cat.Channels.Contains(channel))
+                            continue;
+                        found = true;
+                        break;
                     }
-                    IMessage[] array = msgs.Where(p => !p.Author.IsBot && !p.Author.IsWebhook && p.Author.Id != user1.Id && p.Timestamp.UtcDateTime.Add(TimeSpan.FromSeconds(config.SafeTimeSeconds)) >= DateTime.UtcNow && p.Author is SocketGuildUser user && !user.Roles.Contains(infectedRole)).ToArray();
-                    if (array.Length != 0)
+                    if (!found)
                     {
-                        IMessage msg2 = array[rng.Next(array.Length)];
-                        Console.WriteLine(msg2.GetType().FullName);
-                        Console.WriteLine(msg2.Author.GetType().FullName);
-                        if (msg2 is RestUserMessage message2 && message2.Author is SocketGuildUser user2)
+                        foreach (var item in config.SuperSafeChannelIds)
                         {
-                            await user2.AddRoleAsync(infectedRole);
-                            database.InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
-                            await SaveData();
-                            string name = string.IsNullOrWhiteSpace(user1.Nickname) ? user1.Username : user1.Nickname;
-                            await message2.ReplyAsync($"{name} infected you with {config.VirusName}!");
+                            var cat = guild.GetCategoryChannel(item);
+                            if (cat == null || !cat.Channels.Contains(channel))
+                                continue;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        var msgsa = message.Channel.GetMessagesAsync(config.InfectMessageLimit);
+                        var msgs = await msgsa.FlattenAsync();
+                        if (msgs.Where(p => p.Content.Contains("*cough*") && p.Author.Id == user1.Id).Count() == 0)
+                        {
+                            IMessage[] array = msgs.Where(p => !p.Author.IsBot && !p.Author.IsWebhook && p.Author.Id != user1.Id && p.Timestamp.UtcDateTime.Add(TimeSpan.FromSeconds(config.SafeTimeSeconds)) >= DateTime.UtcNow && p.Author is SocketGuildUser user && !user.Roles.Contains(infectedRole)).ToArray();
+                            if (array.Length != 0)
+                            {
+                                IMessage msg2 = array[rng.Next(array.Length)];
+                                Console.WriteLine(msg2.GetType().FullName);
+                                Console.WriteLine(msg2.Author.GetType().FullName);
+                                if (msg2 is RestUserMessage message2 && message2.Author is SocketGuildUser user2)
+                                {
+                                    await user2.AddRoleAsync(infectedRole);
+                                    database.InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
+                                    await SaveData();
+                                    string name = string.IsNullOrWhiteSpace(user1.Nickname) ? user1.Username : user1.Nickname;
+                                    await message2.ReplyAsync($"{name} infected you with {config.VirusName}!");
+                                }
+                            }
                         }
                     }
                 }
                 if (infectedRole != null && !user1.Roles.Contains(infectedRole) && !config.SuperSafeChannelIds.Contains(message.Channel.Id) && rng.Next(100) < config.AutoInfectPercent)
                 {
-                    await user1.AddRoleAsync(infectedRole);
-                    database.InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
-                    await SaveData();
-                    await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
+                    bool found = false;
+                    foreach (var item in config.SuperSafeChannelIds)
+                    {
+                        var cat = guild.GetCategoryChannel(item);
+                        if (cat == null || !cat.Channels.Contains(channel))
+                            continue;
+                        found = true;
+                        break;
+                    }
+                    if (!found)
+                    {
+                        await user1.AddRoleAsync(infectedRole);
+                        database.InfectedTimestamps.Add(user1.Id, DateTime.UtcNow);
+                        await SaveData();
+                        await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
+                    }
                 }
                 if (infectedRole != null && message.Content.ToLower().StartsWith(config.StatsCommand.ToLower()))
                 {
