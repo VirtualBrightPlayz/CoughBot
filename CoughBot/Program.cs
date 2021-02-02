@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -14,8 +15,10 @@ namespace CoughBot
         private DiscordSocketClient _client;
         private Random rng;
         private Config config;
+        private Database database;
         private SocketRole infectedRole;
         private string path = "config.json";
+        private string dataPath = "data.json";
 
         public class Config
         {
@@ -27,11 +30,17 @@ namespace CoughBot
             public string VirusName { get; set; } = "The Virus";
             public string InfectedRoleName { get; set; } = "The Infected";
             public string ResetCommand { get; set; } = "/cureall";
+            public string StatsCommand { get; set; } = "/infectstats";
             public double SafeTimeSeconds { get; set; } = 60.0d;
             public int InfectedRoleColorRed { get; set; } = 255;
             public int InfectedRoleColorGreen { get; set; } = 165;
             public int InfectedRoleColorBlue { get; set; } = 0;
             public int AutoInfectPercent { get; set; } = 20;
+        }
+
+        public class Database
+        {
+            public Dictionary<ulong, DateTime> InfectedTimestamps = new Dictionary<ulong, DateTime>();
         }
 
         static void Main(string[] args)
@@ -50,7 +59,11 @@ namespace CoughBot
             if (!File.Exists(path))
                 File.WriteAllText(path, JsonConvert.SerializeObject(new Config(), Formatting.Indented));
 
+            if (!File.Exists(dataPath))
+                File.WriteAllText(dataPath, JsonConvert.SerializeObject(new Database(), Formatting.Indented));
+
             config = JsonConvert.DeserializeObject<Config>(File.ReadAllText(path));
+            database = JsonConvert.DeserializeObject<Database>(File.ReadAllText(path));
 
             Console.WriteLine(JsonConvert.SerializeObject(config, Formatting.Indented));
 
@@ -90,10 +103,24 @@ namespace CoughBot
                         }
                     }
                 }
-                if (infectedRole != null && !user1.Roles.Contains(infectedRole) && !config.SuperSafeChannelIds.Contains(message.Channel.Id) && rng.Next(100) <= config.AutoInfectPercent)
+                if (infectedRole != null && !user1.Roles.Contains(infectedRole) && !config.SuperSafeChannelIds.Contains(message.Channel.Id) && rng.Next(100) < config.AutoInfectPercent)
                 {
                     await user1.AddRoleAsync(infectedRole);
                     await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
+                }
+                if (infectedRole != null && message.Content.ToLower().StartsWith(config.StatsCommand.ToLower()))
+                {
+                    string[] infected = infectedRole.Members.Select(p =>
+                    {
+                        string time = "N/A";
+                        if (database.InfectedTimestamps.ContainsKey(p.Id))
+                            time = database.InfectedTimestamps[p.Id].ToString();
+                        return $"{p.Username}#{p.Discriminator} was infected at {time}";
+                    }).ToArray();
+                    EmbedBuilder emb = new EmbedBuilder();
+                    emb.WithTitle(config.VirusName);
+                    emb.WithDescription(string.Join("\n", infected));
+                    await message.ReplyAsync(embed: emb.Build());
                 }
                 if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.ResetCommand.ToLower()))
                 {
@@ -108,6 +135,11 @@ namespace CoughBot
                     await message.ReplyAsync($"{config.VirusName} has been contained.");
                 }
             }
+        }
+
+        public async Task SaveData()
+        {
+            await File.WriteAllTextAsync(dataPath, JsonConvert.SerializeObject(database));
         }
 
         private async Task Log(LogMessage arg)
