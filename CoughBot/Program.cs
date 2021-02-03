@@ -119,7 +119,7 @@ namespace CoughBot
                     case "rlcfg":
                         Console.WriteLine("Config reload...");
                         configs = JsonConvert.DeserializeObject<Config>(await File.ReadAllTextAsync(path));
-                        databases = JsonConvert.DeserializeObject<Database>(await File.ReadAllTextAsync(path));
+                        databases = JsonConvert.DeserializeObject<Database>(await File.ReadAllTextAsync(dataPath));
                         Console.WriteLine("Config reload...Done");
                         break;
                     case "svdb":
