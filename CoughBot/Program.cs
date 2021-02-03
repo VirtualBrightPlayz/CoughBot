@@ -6,24 +6,29 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Discord;
+using Discord.Commands;
 using Discord.Rest;
 using Discord.WebSocket;
 using Newtonsoft.Json;
 
 namespace CoughBot
 {
-    class Program
+    public class Program
     {
         private DiscordSocketClient _client;
+        private CommandService _service;
         private Random rng;
         private Config configs;
         private Database databases;
         private string path = "config.json";
         private string dataPath = "data.json";
+        public static string Prefix { get; private set; } = "~~";
+        public static Program program { get; private set; }
 
         public class Config
         {
             public string Token { get; set; } = "bot_token";
+            public string RegisterCommand { get; set; } = "/registerguild";
             public Dictionary<string, GuildConfig> Guilds { get; set; } = new Dictionary<string, GuildConfig>()
             {
                 { "0", new GuildConfig() }
@@ -46,7 +51,7 @@ namespace CoughBot
             public int InfectedRoleColorRed { get; set; } = 255;
             public int InfectedRoleColorGreen { get; set; } = 165;
             public int InfectedRoleColorBlue { get; set; } = 0;
-            public int AutoInfectPercent { get; set; } = 20;
+            public int AutoInfectPercent { get; set; } = 5;
             public int StatsMaxInfectedListings { get; set; } = 15;
             public float InfectionMin { get; set; } = 0.5f;
             public int InfectionMaxPeopleRandom { get; set; } = 5;
@@ -74,6 +79,7 @@ namespace CoughBot
             public ulong Id { get; set; }
             public float Infection { get; set; }
             public long InfectedTimestamp { get; set; }
+            public ulong LastMessage { get; set; }
             public List<ulong> InfectedWho { get; set; } = new List<ulong>();
         }
 
@@ -84,6 +90,7 @@ namespace CoughBot
 
         public async Task MainAsync()
         {
+            program = this;
             rng = new Random();
 
             if (!File.Exists(path))
@@ -105,6 +112,10 @@ namespace CoughBot
 
             _client.Log += Log;
             _client.MessageReceived += MessageReceived;
+
+            _service = new CommandService();
+            await _service.AddModuleAsync<Commands>(null);
+            await _service.AddModuleAsync<AdminCommands>(null);
 
             await _client.LoginAsync(TokenType.Bot, configs.Token);
             await _client.StartAsync();
@@ -135,6 +146,20 @@ namespace CoughBot
             // await Task.Delay(-1);
         }
 
+        public CommandService GetCommandService()
+        {
+            return _service;
+        }
+
+        private async Task RunCommandService(SocketUserMessage message)
+        {
+            int argPos = 0;
+            if (!(message.HasStringPrefix(Prefix, ref argPos) ||message.HasMentionPrefix(_client.CurrentUser, ref argPos)) || (message.Author.IsBot || message.Author.IsWebhook))
+                return;
+            SocketCommandContext context = new SocketCommandContext(_client, message);
+            await _service.ExecuteAsync(context, argPos, null);
+        }
+
         private async Task MessageReceived(SocketMessage arg)
         {
             SocketRole infectedRole = null;
@@ -142,6 +167,7 @@ namespace CoughBot
             {
                 if (!configs.Guilds.ContainsKey(user1.Guild.Id.ToString()))
                 {
+                    await RunCommandService(message);
                     return;
                 }
                 if (!databases.Guilds.ContainsKey(user1.Guild.Id.ToString()))
@@ -196,10 +222,10 @@ namespace CoughBot
                             }
                         }
                     }
+                    return;
                 }
                 if (infectedRole != null && !user1.Roles.Contains(infectedRole) && !config.SuperSafeChannelIds.Contains(message.Channel.Id) && rng.Next(100) < config.AutoInfectPercent)
                 {
-                    // TODO: ML in the RNG infection
                     bool found = false;
                     foreach (var item in config.SuperSafeChannelIds)
                     {
@@ -214,6 +240,7 @@ namespace CoughBot
                         await InfectUser(user1, infectedRole);
                         await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
                     }
+                    return;
                 }
                 if (infectedRole != null && message.Content.ToLower().StartsWith(config.StatsCommand.ToLower()))
                 {
@@ -253,21 +280,9 @@ namespace CoughBot
                     StatsDraw.Draw(path, user1.Guild, stats, config.StatsMaxInfectedListings);
                     await message.Channel.SendFileAsync(path);
                     File.Delete(path);
+                    return;
                 }
-                if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.ResetCommand.ToLower()))
-                {
-                    if (infectedRole != null)
-                    {
-                        await infectedRole.DeleteAsync();
-                    }
-                    RestRole role = await user1.Guild.CreateRoleAsync(config.InfectedRoleName, GuildPermissions.None, new Discord.Color(config.InfectedRoleColorRed, config.InfectedRoleColorGreen, config.InfectedRoleColorBlue), false, false);
-                    configs.Guilds[user1.Guild.Id.ToString()].InfectedRoleId = role.Id;
-                    databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.Clear();
-                    await SaveData();
-                    await message.ReplyAsync($"{config.VirusName} has been contained.");
-                }
-                // TODO: add cure command
-                /*if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.CureCommand.ToLower()))
+                /*if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.ResetCommand.ToLower()))
                 {
                     if (infectedRole != null)
                     {
@@ -300,7 +315,39 @@ namespace CoughBot
                         await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
                     }
                 }
+                await RunCommandService(message);
             }
+        }
+
+        public async Task RegisterGuild(SocketGuild guild, GuildConfig conf)
+        {
+            if (!databases.Guilds.ContainsKey(guild.Id.ToString()))
+            {
+                databases.Guilds.Add(guild.Id.ToString(), new GuildDatabase());
+            }
+            if (!configs.Guilds.ContainsKey(guild.Id.ToString()))
+            {
+                configs.Guilds.Add(guild.Id.ToString(), conf);
+            }
+            await SaveData();
+        }
+
+        public GuildConfig GetGuildConfig(SocketGuild guild)
+        {
+            if (configs.Guilds.ContainsKey(guild.Id.ToString()))
+            {
+                return configs.Guilds[guild.Id.ToString()];
+            }
+            return null;
+        }
+
+        public GuildDatabase GetGuildDatabase(SocketGuild guild)
+        {
+            if (databases.Guilds.ContainsKey(guild.Id.ToString()))
+            {
+                return databases.Guilds[guild.Id.ToString()];
+            }
+            return null;
         }
 
         public async Task SaveData()
