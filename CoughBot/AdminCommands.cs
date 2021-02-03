@@ -141,7 +141,7 @@ namespace CoughBot
         }
 
         [Command("cureall")]
-        [Summary("Cures everyone in the server (this deletes the infected role).")]
+        [Summary("Cures everyone in the server (this deletes the infected role and clears stats).")]
         public async Task CureAllAsync()
         {
             if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles)
@@ -211,6 +211,52 @@ namespace CoughBot
             else
             {
                 await Context.Message.ReplyAsync("Unable to set infected role name: no permission.");
+            }
+        }
+        
+        [Command("infect")]
+        [Summary("Infects the specified user.")]
+        public async Task InfectUserAsync(IGuildUser user)
+        {
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles && user is SocketGuildUser guildUser1)
+            {
+                Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);
+                if (config == null)
+                {
+                    await Context.Message.ReplyAsync("No config found on server.\nDid you register the bot?");
+                    return;
+                }
+                SocketRole infectedRole = Context.Guild.GetRole(config.InfectedRoleId);
+                if (infectedRole == null)
+                {
+                    await Context.Message.ReplyAsync($"The role by id of {config.InfectedRoleId} not found.");
+                    return;
+                }
+                await Program.program.InfectUser(guildUser1, infectedRole);
+                await Context.Message.ReplyAsync($"{guildUser1.Username} is now infected.");
+            }
+        }
+        
+        [Command("cure")]
+        [Summary("Cures the specified user.")]
+        public async Task CureUserAsync(IGuildUser user)
+        {
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles && user is SocketGuildUser guildUser1)
+            {
+                Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);
+                if (config == null)
+                {
+                    await Context.Message.ReplyAsync("No config found on server.\nDid you register the bot?");
+                    return;
+                }
+                SocketRole infectedRole = Context.Guild.GetRole(config.InfectedRoleId);
+                if (infectedRole == null)
+                {
+                    await Context.Message.ReplyAsync($"The role by id of {config.InfectedRoleId} not found.");
+                    return;
+                }
+                await Program.program.CureUser(guildUser1, infectedRole);
+                await Context.Message.ReplyAsync($"{guildUser1.Username} is now cured.");
             }
         }
     }

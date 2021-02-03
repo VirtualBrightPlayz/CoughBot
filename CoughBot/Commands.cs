@@ -56,7 +56,7 @@ namespace CoughBot
         }
 
         [Command("stats")]
-        [Summary("Gives a summary of recently diagnosed and who has been spreading the disease the most")]
+        [Summary("Gives a summary of recently diagnosed and who has been spreading the disease the most.")]
         public async Task StatsAsync()
         {
             Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);

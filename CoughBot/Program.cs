@@ -154,7 +154,7 @@ namespace CoughBot
         private async Task RunCommandService(SocketUserMessage message)
         {
             int argPos = 0;
-            if (!(message.HasStringPrefix(Prefix, ref argPos) ||message.HasMentionPrefix(_client.CurrentUser, ref argPos)) || (message.Author.IsBot || message.Author.IsWebhook))
+            if (!(message.HasStringPrefix(Prefix, ref argPos) || message.HasMentionPrefix(_client.CurrentUser, ref argPos)) || (message.Author.IsBot || message.Author.IsWebhook))
                 return;
             SocketCommandContext context = new SocketCommandContext(_client, message);
             await _service.ExecuteAsync(context, argPos, null);
@@ -242,79 +242,6 @@ namespace CoughBot
                     }
                     return;
                 }
-                /*if (infectedRole != null && message.Content.ToLower().StartsWith(config.StatsCommand.ToLower()))
-                {
-                    string[] infected = infectedRole.Members.OrderByDescending(p =>
-                    {
-                        GuildUserDatabase dbUser = databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.FirstOrDefault(p2 => p2.Id == p.Id);
-                        if (dbUser != null && dbUser.Infection >= config.InfectionMin)
-                            return dbUser.InfectedTimestamp;
-                        return long.MinValue;
-                    }).Select(p =>
-                    {
-                        string time = "N/A";
-                        GuildUserDatabase dbUser = databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.FirstOrDefault(p2 => p2.Id == p.Id);
-                        if (dbUser != null && dbUser.Infection >= config.InfectionMin)
-                            time = DateTime.MinValue.AddTicks(dbUser.InfectedTimestamp).ToString();
-                        return $"{p.Username}#{p.Discriminator} was infected at {time}";
-                    }).ToArray();
-                    string output = "";
-                    for (int i = 0; i < infected.Length && i < config.StatsMaxInfectedListings; i++)
-                    {
-                        if (i != 0)
-                            output += "\n";
-                        output += infected[i];
-                    }
-                    EmbedBuilder emb = new EmbedBuilder();
-                    emb.WithColor(config.InfectedRoleColorRed, config.InfectedRoleColorGreen, config.InfectedRoleColorBlue);
-                    emb.WithTitle(config.VirusName);
-                    emb.WithDescription(output);
-                    await message.ReplyAsync(embed: emb.Build());
-                    // string path = Path.GetTempFileName();
-                    string path = Path.GetRandomFileName() + ".png";
-                    Dictionary<string, List<ulong>> stats = new Dictionary<string, List<ulong>>();
-                    foreach (var uitem in databases.Guilds[user1.Guild.Id.ToString()].GuildUsers)
-                    {
-                        stats.Add(uitem.Id.ToString(), uitem.InfectedWho);
-                    }
-                    StatsDraw.Draw(path, user1.Guild, stats, config.StatsMaxInfectedListings);
-                    await message.Channel.SendFileAsync(path);
-                    File.Delete(path);
-                    return;
-                }*/
-                /*if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.ResetCommand.ToLower()))
-                {
-                    if (infectedRole != null)
-                    {
-                        await infectedRole.DeleteAsync();
-                    }
-                    RestRole role = await user1.Guild.CreateRoleAsync(config.InfectedRoleName, GuildPermissions.None, new Discord.Color(config.InfectedRoleColorRed, config.InfectedRoleColorGreen, config.InfectedRoleColorBlue), false, false);
-                    configs.Guilds[user1.Guild.Id.ToString()].InfectedRoleId = role.Id;
-                    databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.Clear();
-                    await SaveData();
-                    await message.ReplyAsync($"{config.VirusName} has been contained.");
-                }*/
-                if (message.Content.ToLower().StartsWith(config.InfectCommand.ToLower()))
-                {
-                    if (user1.GuildPermissions.ManageRoles && message.MentionedUsers.Count > 0)
-                    {
-                        List<string> usernames = new List<string>();
-                        foreach (var ping in message.MentionedUsers)
-                        {
-                            var u = guild.GetUser(ping.Id);
-                            if (u == null)
-                                continue;
-                            await InfectUser(u, infectedRole);
-                            usernames.Add(u.Username);
-                        }
-                        await message.ReplyAsync($"Infected {string.Join(", ", usernames)} with {config.VirusName}.");
-                    }
-                    else
-                    {
-                        await InfectUser(user1, infectedRole);
-                        await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
-                    }
-                }
                 await RunCommandService(message);
             }
         }
@@ -375,6 +302,20 @@ namespace CoughBot
                 gu2.InfectedWho.Add(user1.Id);
                 // TODO: reduce infection for infector and make use of it properly
             }
+            await SaveData();
+        }
+
+        public async Task CureUser(SocketGuildUser user1, SocketRole infectedRole)
+        {
+            if (infectedRole == null)
+                return;
+            await user1.RemoveRoleAsync(infectedRole);
+            GuildUserDatabase db = databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.FirstOrDefault(p => p.Id == user1.Id);
+            if (db == null)
+            {
+                return;
+            }
+            databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.Remove(db);
             await SaveData();
         }
 
