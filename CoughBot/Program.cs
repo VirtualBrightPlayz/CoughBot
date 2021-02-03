@@ -242,7 +242,7 @@ namespace CoughBot
                     }
                     return;
                 }
-                if (infectedRole != null && message.Content.ToLower().StartsWith(config.StatsCommand.ToLower()))
+                /*if (infectedRole != null && message.Content.ToLower().StartsWith(config.StatsCommand.ToLower()))
                 {
                     string[] infected = infectedRole.Members.OrderByDescending(p =>
                     {
@@ -281,7 +281,7 @@ namespace CoughBot
                     await message.Channel.SendFileAsync(path);
                     File.Delete(path);
                     return;
-                }
+                }*/
                 /*if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.ResetCommand.ToLower()))
                 {
                     if (infectedRole != null)
