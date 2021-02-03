@@ -28,6 +28,7 @@ namespace CoughBot
         public class Config
         {
             public string Token { get; set; } = "bot_token";
+            [Obsolete]
             public string RegisterCommand { get; set; } = "/registerguild";
             public Dictionary<string, GuildConfig> Guilds { get; set; } = new Dictionary<string, GuildConfig>()
             {
@@ -43,9 +44,13 @@ namespace CoughBot
             public int InfectMessageLimit { get; set; } = 5;
             public string VirusName { get; set; } = "The Virus";
             public string InfectedRoleName { get; set; } = "The Infected";
+            [Obsolete]
             public string InfectCommand { get; set; } = "/infect";
+            [Obsolete]
             public string CureCommand { get; set; } = "/cure";
+            [Obsolete]
             public string ResetCommand { get; set; } = "/cureall";
+            [Obsolete]
             public string StatsCommand { get; set; } = "/virusstats";
             public double SafeTimeSeconds { get; set; } = 60.0d;
             public int InfectedRoleColorRed { get; set; } = 255;
@@ -248,11 +253,19 @@ namespace CoughBot
 
         public async Task RegisterGuild(SocketGuild guild, GuildConfig conf)
         {
-            if (!databases.Guilds.ContainsKey(guild.Id.ToString()))
+            if (databases.Guilds.ContainsKey(guild.Id.ToString()))
+            {
+                databases.Guilds[guild.Id.ToString()] = new GuildDatabase();
+            }
+            else
             {
                 databases.Guilds.Add(guild.Id.ToString(), new GuildDatabase());
             }
-            if (!configs.Guilds.ContainsKey(guild.Id.ToString()))
+            if (configs.Guilds.ContainsKey(guild.Id.ToString()))
+            {
+                configs.Guilds[guild.Id.ToString()] = conf;
+            }
+            else
             {
                 configs.Guilds.Add(guild.Id.ToString(), conf);
             }

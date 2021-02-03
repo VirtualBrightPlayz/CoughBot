@@ -24,7 +24,7 @@ namespace CoughBot
                 CommandService service = Program.program.GetCommandService();
                 EmbedBuilder emb = new EmbedBuilder();
                 int pageNum = page - 1;
-                emb.Title = $"Commands List Page {page}/{(int)Math.Round((float)service.Commands.Count() / HelpPageSize)}";
+                emb.Title = $"Commands List Page {page}/{(int)Math.Ceiling((float)service.Commands.Count() / HelpPageSize)}";
                 List<CommandInfo> cmds = service.Commands.ToList().GetRange(Math.Clamp(pageNum * HelpPageSize, 0, service.Commands.Count()), Math.Clamp(HelpPageSize, 0, service.Commands.Count() - pageNum * HelpPageSize));
                 foreach (CommandInfo cmd in cmds)
                 {

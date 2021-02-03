@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Discord;
 using Discord.Commands;
@@ -10,12 +11,16 @@ namespace CoughBot
     public class AdminCommands : ModuleBase<SocketCommandContext>
     {
         [Command("registerguild")]
-        [Summary("Registers the current Guild in the database.")]
+        [Summary("Registers the current Guild in the database (resets everything in the database and config).")]
         public async Task RegisterGuildAsync()
         {
-            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles)
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageGuild)
             {
-                await Program.program.RegisterGuild(Context.Guild, new Program.GuildConfig());
+                await Program.program.RegisterGuild(Context.Guild, new Program.GuildConfig()
+                {
+                    SafeChannelIds = new ulong[0],
+                    SuperSafeChannelIds = new ulong[0]
+                });
                 await Context.Message.ReplyAsync("Guild registered.");
             }
             else
@@ -257,6 +262,124 @@ namespace CoughBot
                 }
                 await Program.program.CureUser(guildUser1, infectedRole);
                 await Context.Message.ReplyAsync($"{guildUser1.Username} is now cured.");
+            }
+        }
+
+        [Command("addsafechannel")]
+        [Summary("Adds a channel that cannot be used to infect others.")]
+        public async Task AddSafeAsync(IGuildChannel channel)
+        {
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles)
+            {
+                Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);
+                if (config == null)
+                {
+                    await Context.Message.ReplyAsync("No config found on server.\nDid you register the bot?");
+                    return;
+                }
+                List<ulong> safe = new List<ulong>(config.SafeChannelIds);
+                safe.Add(channel.Id);
+                config.SafeChannelIds = safe.ToArray();
+                await Context.Message.ReplyAsync($"Added {channel.Name} to the list of safe channels.");
+            }
+        }
+
+        [Command("addsafechannel+")]
+        [Summary("Adds a channel that cannot be used to infect others and/or trigger random infections.")]
+        public async Task AddSSafeAsync(IGuildChannel channel)
+        {
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles)
+            {
+                Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);
+                if (config == null)
+                {
+                    await Context.Message.ReplyAsync("No config found on server.\nDid you register the bot?");
+                    return;
+                }
+                List<ulong> safe = new List<ulong>(config.SuperSafeChannelIds);
+                safe.Add(channel.Id);
+                config.SuperSafeChannelIds = safe.ToArray();
+                await Context.Message.ReplyAsync($"Added {channel.Name} to the list of super safe channels.");
+            }
+        }
+
+        [Command("delsafechannel")]
+        [Summary("Deletes a channel from the safe channel list.")]
+        public async Task DelSafeAsync(IGuildChannel channel)
+        {
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles)
+            {
+                Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);
+                if (config == null)
+                {
+                    await Context.Message.ReplyAsync("No config found on server.\nDid you register the bot?");
+                    return;
+                }
+                List<ulong> safe = new List<ulong>(config.SafeChannelIds);
+                safe.Remove(channel.Id);
+                config.SafeChannelIds = safe.ToArray();
+                await Context.Message.ReplyAsync($"Removed {channel.Name} from the list of safe channels.");
+            }
+        }
+
+        [Command("delsafechannel+")]
+        [Summary("Deletes a channel from the super safe channel list.")]
+        public async Task DelSSafeAsync(IGuildChannel channel)
+        {
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles)
+            {
+                Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);
+                if (config == null)
+                {
+                    await Context.Message.ReplyAsync("No config found on server.\nDid you register the bot?");
+                    return;
+                }
+                List<ulong> safe = new List<ulong>(config.SuperSafeChannelIds);
+                safe.Remove(channel.Id);
+                config.SuperSafeChannelIds = safe.ToArray();
+                await Context.Message.ReplyAsync($"Removed {channel.Name} from the list of super safe channels.");
+            }
+        }
+
+        [Command("safechannels")]
+        [Summary("Lists the safe channel list.")]
+        public async Task ListSafeAsync()
+        {
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles)
+            {
+                Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);
+                if (config == null)
+                {
+                    await Context.Message.ReplyAsync("No config found on server.\nDid you register the bot?");
+                    return;
+                }
+                List<string> channels = new List<string>();
+                foreach (var item in config.SafeChannelIds)
+                {
+                    channels.Add($"<#{item}>");
+                }
+                await Context.Message.ReplyAsync("Safe Channels: " + string.Join(", ", channels));
+            }
+        }
+
+        [Command("safechannels+")]
+        [Summary("Lists the super safe channel list.")]
+        public async Task ListSSafeAsync()
+        {
+            if (Context.User is SocketGuildUser guildUser && guildUser.GuildPermissions.ManageRoles)
+            {
+                Program.GuildConfig config = Program.program.GetGuildConfig(Context.Guild);
+                if (config == null)
+                {
+                    await Context.Message.ReplyAsync("No config found on server.\nDid you register the bot?");
+                    return;
+                }
+                List<string> channels = new List<string>();
+                foreach (var item in config.SuperSafeChannelIds)
+                {
+                    channels.Add($"<#{item}>");
+                }
+                await Context.Message.ReplyAsync("Super Safe Channels: " + string.Join(", ", channels));
             }
         }
     }
