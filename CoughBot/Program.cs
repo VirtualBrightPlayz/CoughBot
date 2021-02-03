@@ -8,8 +8,6 @@ using System.Threading.Tasks;
 using Discord;
 using Discord.Rest;
 using Discord.WebSocket;
-using Microsoft.ML;
-using Microsoft.ML.Data;
 using Newtonsoft.Json;
 
 namespace CoughBot
@@ -17,8 +15,6 @@ namespace CoughBot
     class Program
     {
         private DiscordSocketClient _client;
-        private MLContext _context;
-        private ITransformer _mlModel;
         private Random rng;
         private Config configs;
         private Database databases;
@@ -42,6 +38,8 @@ namespace CoughBot
             public int InfectMessageLimit { get; set; } = 5;
             public string VirusName { get; set; } = "The Virus";
             public string InfectedRoleName { get; set; } = "The Infected";
+            public string InfectCommand { get; set; } = "/infect";
+            public string CureCommand { get; set; } = "/cure";
             public string ResetCommand { get; set; } = "/cureall";
             public string StatsCommand { get; set; } = "/virusstats";
             public double SafeTimeSeconds { get; set; } = 60.0d;
@@ -59,33 +57,6 @@ namespace CoughBot
             public Dictionary<string, GuildDatabase> Guilds { get; set; } = new Dictionary<string, GuildDatabase>()
             {
                 { "0", new GuildDatabase() }
-            };
-            public List<InputData> MLData { get; set; } = new List<InputData>()
-            {
-                new InputData()
-                {
-                    MessageLength = 25,
-                    CoughsPerSpan = 1,
-                    InfectedAmount = 0.45f
-                },
-                new InputData()
-                {
-                    MessageLength = 25,
-                    CoughsPerSpan = 10,
-                    InfectedAmount = 0.25f
-                },
-                new InputData()
-                {
-                    MessageLength = 5,
-                    CoughsPerSpan = 1,
-                    InfectedAmount = 0.25f
-                },
-                new InputData()
-                {
-                    MessageLength = 100,
-                    CoughsPerSpan = 1,
-                    InfectedAmount = 0.85f
-                }
             };
         }
 
@@ -106,22 +77,6 @@ namespace CoughBot
             public List<ulong> InfectedWho { get; set; } = new List<ulong>();
         }
 
-        public class InputData
-        {
-            [LoadColumn(0)]
-            public float MessageLength { get; set; }
-            [LoadColumn(1)]
-            public float CoughsPerSpan { get; set; }
-            [LoadColumn(2)]
-            public float InfectedAmount { get; set; }
-        }
-
-        public class OutputData
-        {
-            [ColumnName("PredictedLabel")]
-            public float InfectedAmount { get; set; }
-        }
-
         static void Main(string[] args)
         {
             new Program().MainAsync().GetAwaiter().GetResult();
@@ -139,11 +94,6 @@ namespace CoughBot
 
             configs = JsonConvert.DeserializeObject<Config>(await File.ReadAllTextAsync(path));
             databases = JsonConvert.DeserializeObject<Database>(await File.ReadAllTextAsync(dataPath));
-
-            _context = new MLContext(seed: 0);
-            
-            _mlModel = TrainBot();
-
 
             _client = new DiscordSocketClient(new DiscordSocketConfig()
             {
@@ -176,22 +126,6 @@ namespace CoughBot
                         await SaveData();
                         Console.WriteLine("SaveData...Done");
                         break;
-                    case "train":
-                        _mlModel = TrainBot();
-                        break;
-                    case "rngtrain":
-                        {
-                            for (int i = 0; i < 25; i++)
-                                databases.MLData.Add(new InputData()
-                                {
-                                    CoughsPerSpan = rng.Next(1, 5),
-                                    MessageLength = rng.Next(5, 35),
-                                    InfectedAmount = rng.Next(0, 1000) / 1000f
-                                });
-                            await SaveData();
-                            _mlModel = TrainBot();
-                        }
-                        break;
                     case "exit":
                         await SaveData();
                         Console.WriteLine("Exit!");
@@ -199,30 +133,6 @@ namespace CoughBot
                 }
             }
             // await Task.Delay(-1);
-        }
-
-        public ITransformer TrainBot()
-        {
-            IDataView data = _context.Data.LoadFromEnumerable(databases.MLData);
-            var pipeLine = _context.Transforms.Concatenate("Features", nameof(InputData.MessageLength), nameof(InputData.CoughsPerSpan))
-                .Append(_context.Transforms.Conversion.MapValueToKey("Label", nameof(InputData.InfectedAmount)));
-            var trainer = pipeLine.Append(_context.MulticlassClassification.Trainers.SdcaMaximumEntropy(labelColumnName: "Label", featureColumnName: "Features", maximumNumberOfIterations: 100))
-                .Append(_context.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
-            Console.WriteLine("Training bot... (this may take some time!)");
-            Console.Out.Flush();
-            var model = trainer.Fit(data);
-            Console.WriteLine("Training bot...Done");
-            return model;
-        }
-
-        public OutputData EvalBot(InputData data)
-        {
-            var prediction = _context.Model.CreatePredictionEngine<InputData, OutputData>(_mlModel);
-            var eval = prediction.Predict(data);
-            Console.WriteLine($"data.CoughsPerSpan {data.CoughsPerSpan}");
-            Console.WriteLine($"data.MessageLength {data.MessageLength}");
-            Console.WriteLine($"eval.InfectedAmount {eval.InfectedAmount}");
-            return eval;
         }
 
         private async Task MessageReceived(SocketMessage arg)
@@ -270,17 +180,7 @@ namespace CoughBot
                     {
                         var msgsa = message.Channel.GetMessagesAsync(config.InfectMessageLimit);
                         var msgs = await msgsa.FlattenAsync();
-                        int leng = 0;
-                        var msgsArr = msgs.Where(p => p.Content.Contains("*cough*") && (leng++ == 0 || true) && p.Author.Id == user1.Id && p.Timestamp.UtcDateTime.Add(TimeSpan.FromSeconds(config.SafeTimeSeconds)) >= DateTime.UtcNow).ToArray();
-                        var msgsArrUseless = msgs.Where(p => (leng++ == 0 || true) && p.Author.Id != user1.Id && p.Timestamp.UtcDateTime.Add(TimeSpan.FromSeconds(config.SafeTimeSeconds)) >= DateTime.UtcNow && ((p.Author is SocketGuildUser p_suser && !p_suser.Roles.Contains(infectedRole)) || p.Author is not SocketGuildUser)).ToArray();
-                        InputData mlData = new InputData()
-                        {
-                            CoughsPerSpan = msgsArr.Length,
-                            MessageLength = leng
-                        };
-                        OutputData mlOut = EvalBot(mlData);
-                        Console.WriteLine($"{user1.Username}#{user1.Discriminator} = {mlOut.InfectedAmount}");
-                        if (mlOut.InfectedAmount >= config.InfectionMin)
+                        
                         {
                             IMessage[] array = msgs.Where(p => !p.Author.IsBot && !p.Author.IsWebhook && p.Author.Id != user1.Id && p.Timestamp.UtcDateTime.Add(TimeSpan.FromSeconds(config.SafeTimeSeconds)) >= DateTime.UtcNow && p.Author is SocketGuildUser user && !user.Roles.Contains(infectedRole)).ToArray();
                             if (array.Length != 0)
@@ -309,20 +209,9 @@ namespace CoughBot
                         found = true;
                         break;
                     }
-                    var msgsa = message.Channel.GetMessagesAsync(config.InfectMessageLimit);
-                    var msgs = await msgsa.FlattenAsync();
-                    int leng = 0;
-                    var msgsArr = msgs.Where(p => p.Content.Contains("*cough*") && (leng++ == 0 || true) && p.Author.Id == user1.Id && p.Timestamp.UtcDateTime.Add(TimeSpan.FromSeconds(config.SafeTimeSeconds)) >= DateTime.UtcNow).ToArray();
-                    var msgsArrUseless = msgs.Where(p => (leng++ == 0 || true) && p.Author.Id != user1.Id && p.Timestamp.UtcDateTime.Add(TimeSpan.FromSeconds(config.SafeTimeSeconds)) >= DateTime.UtcNow && ((p.Author is SocketGuildUser p_suser && !p_suser.Roles.Contains(infectedRole)) || p.Author is not SocketGuildUser)).ToArray();
-                    InputData mlData = new InputData()
-                    {
-                        CoughsPerSpan = msgsArr.Length,
-                        MessageLength = leng
-                    };
-                    if (!found && databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.Where(p => p.Infection >= config.InfectionMin).Count() < config.InfectionMaxPeopleRandom /*&& EvalBot(mlData).InfectedAmount >= config.InfectionMin*/)
+                    if (!found && databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.Where(p => p.Infection >= config.InfectionMin).Count() < config.InfectionMaxPeopleRandom)
                     {
                         await InfectUser(user1, infectedRole);
-                        await SaveData();
                         await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
                     }
                 }
@@ -376,6 +265,40 @@ namespace CoughBot
                     databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.Clear();
                     await SaveData();
                     await message.ReplyAsync($"{config.VirusName} has been contained.");
+                }
+                // TODO: add cure command
+                /*if (user1.GuildPermissions.ManageRoles && message.Content.ToLower().StartsWith(config.CureCommand.ToLower()))
+                {
+                    if (infectedRole != null)
+                    {
+                        await infectedRole.DeleteAsync();
+                    }
+                    RestRole role = await user1.Guild.CreateRoleAsync(config.InfectedRoleName, GuildPermissions.None, new Discord.Color(config.InfectedRoleColorRed, config.InfectedRoleColorGreen, config.InfectedRoleColorBlue), false, false);
+                    configs.Guilds[user1.Guild.Id.ToString()].InfectedRoleId = role.Id;
+                    databases.Guilds[user1.Guild.Id.ToString()].GuildUsers.Clear();
+                    await SaveData();
+                    await message.ReplyAsync($"{config.VirusName} has been contained.");
+                }*/
+                if (message.Content.ToLower().StartsWith(config.InfectCommand.ToLower()))
+                {
+                    if (user1.GuildPermissions.ManageRoles && message.MentionedUsers.Count > 0)
+                    {
+                        List<string> usernames = new List<string>();
+                        foreach (var ping in message.MentionedUsers)
+                        {
+                            var u = guild.GetUser(ping.Id);
+                            if (u == null)
+                                continue;
+                            await InfectUser(u, infectedRole);
+                            usernames.Add(u.Username);
+                        }
+                        await message.ReplyAsync($"Infected {string.Join(", ", usernames)} with {config.VirusName}.");
+                    }
+                    else
+                    {
+                        await InfectUser(user1, infectedRole);
+                        await message.ReplyAsync($"Somehow, you were infected with {config.VirusName}!");
+                    }
                 }
             }
         }
