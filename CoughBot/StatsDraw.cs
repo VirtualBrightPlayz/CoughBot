@@ -42,7 +42,7 @@ namespace CoughBot
                     ang += item.Value.Count;
                 }
                 float line = 10f;
-                float vert = 410f;
+                float vert = 400f;
                 foreach (var item in colors)
                 {
                     var user = guild.GetUser(ulong.Parse(item.Key));
