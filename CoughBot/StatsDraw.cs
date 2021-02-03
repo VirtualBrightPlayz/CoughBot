@@ -23,6 +23,7 @@ namespace CoughBot
                 gfx.Clear(Color.Black);
                 gfx.DrawString("People Infected", fontTitle, brush, 10f, 10f);
                 Rectangle rect = new Rectangle(100, 50, 400, 300);
+                Rectangle rectShadow = new Rectangle(100, 70, 400, 300);
                 var data2 = data.OrderBy(p => p.Value.Count).ToList();
                 // data2.RemoveRange(Math.Clamp(data2.Count, 0, maxListings), Math.Clamp(data2.Count, 0, maxListings));
                 int total = 0;
@@ -32,6 +33,9 @@ namespace CoughBot
                 }
                 float ang = 0f;
                 Dictionary<string, Color> colors = new Dictionary<string, Color>();
+                Color shadowColor = Color.FromArgb(35, 35, 35);
+                brush.Color = shadowColor;
+                gfx.FillPie(brush, rectShadow, 0f, 360f);
                 foreach (var item in data2)
                 {
                     Color color = Color.FromArgb(rng.Next(50, 255), rng.Next(50, 255), rng.Next(50, 255));
